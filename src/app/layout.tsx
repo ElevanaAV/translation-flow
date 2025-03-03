@@ -5,6 +5,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import ToastProvider from "@/context/ToastContext";
 import Header from "@/components/layout/Header";
 import ErrorBoundary from "@/components/ui/ErrorBoundary";
+import Script from "next/script";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,6 +30,21 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#ffffff" />
+        {/* Pre-connect to domains */}
+        <link rel="preconnect" href="https://translation-flow-app.web.app" />
+        <link rel="preconnect" href="https://translation-flow-app.firebaseapp.com" />
+        <link rel="preconnect" href="https://firebasestorage.googleapis.com" />
+        {/* DNS prefetch */}
+        <link rel="dns-prefetch" href="https://translation-flow-app.web.app" />
+        <link rel="dns-prefetch" href="https://translation-flow-app.firebaseapp.com" />
+        <link rel="dns-prefetch" href="https://firebasestorage.googleapis.com" />
+        {/* Prevent MIME type errors */}
+        <meta httpEquiv="X-Content-Type-Options" content="nosniff" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen flex flex-col`}
       >
@@ -47,6 +63,18 @@ export default function RootLayout({
             </ToastProvider>
           </AuthProvider>
         </ErrorBoundary>
+        
+        {/* Script to handle chunk loading errors */}
+        <Script id="handle-chunk-error" strategy="beforeInteractive">
+          {`
+            window.addEventListener('error', function(event) {
+              if (event && event.error && event.error.name === 'ChunkLoadError') {
+                console.warn('Chunk loading error detected, refreshing page...');
+                window.location.reload();
+              }
+            });
+          `}
+        </Script>
       </body>
     </html>
   );
