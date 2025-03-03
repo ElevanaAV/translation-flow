@@ -20,18 +20,32 @@ export const getAssetPrefix = () => {
 
 // Check if the current host is allowed
 export const isAllowedHost = (host: string) => {
+  if (!host) return true; // Handle undefined host
+  
   const allowedHosts = [
     'translation-flow-app.web.app',
     'translation-flow-app.firebaseapp.com',
+    'ssrtranslationflowapp-25djctqurq-ue.a.run.app', // Cloud Function URL
+    'firebasestorage.googleapis.com',
     'localhost',
     '127.0.0.1'
   ];
   
-  return allowedHosts.some(allowedHost => 
+  const result = allowedHosts.some(allowedHost => 
     host === allowedHost || 
     host.endsWith(`.${allowedHost}`) ||
-    host.includes('localhost:')
+    host.includes('localhost:') ||
+    host.includes('firebaseapp.com') ||
+    host.includes('translation-flow-app') ||
+    host.includes('a.run.app')
   );
+  
+  // Log for debugging
+  if (!result && typeof window !== 'undefined') {
+    console.debug(`Host validation failed for: ${host}`);
+  }
+  
+  return result;
 };
 
 // Get full asset URL for static resources

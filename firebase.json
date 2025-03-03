@@ -65,6 +65,14 @@
         "destination": "/_next/static/**"
       },
       {
+        "source": "/languages",
+        "destination": "/languages.html"
+      },
+      {
+        "source": "/languages/**",
+        "function": "ssrtranslationflowapp"
+      },
+      {
         "source": "/api/**",
         "function": "ssrtranslationflowapp"
       },

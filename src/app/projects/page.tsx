@@ -5,8 +5,11 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Link from 'next/link';
+import { getUserProjects } from '@/lib/services/projectService';
+import { useAuth } from '@/context/AuthContext';
+import { Project as FirestoreProject, ProjectPhase, PhaseStatus } from '@/lib/types';
 
-// Mock project data
+// Interface for UI projects
 interface Project {
   id: string;
   name: string;
@@ -17,69 +20,65 @@ interface Project {
   progress: number;
 }
 
-const MOCK_PROJECTS: Project[] = [
-  {
-    id: '1',
-    name: 'Website Localization',
-    description: 'Company website localization project for multiple languages',
-    status: 'active',
-    languages: ['Spanish', 'French', 'German', 'Italian', 'Japanese'],
-    updatedAt: '2024-02-28T12:00:00Z',
-    progress: 65,
-  },
-  {
-    id: '2',
-    name: 'Mobile App Localization',
-    description: 'Localization of mobile app UI and content',
-    status: 'active',
-    languages: ['French', 'German', 'Portuguese'],
-    updatedAt: '2024-02-25T10:30:00Z',
-    progress: 40,
-  },
-  {
-    id: '3',
-    name: 'Marketing Materials',
-    description: 'Translation of marketing materials and campaign content',
-    status: 'active',
-    languages: ['Spanish', 'French', 'Portuguese', 'German', 'Russian', 'Chinese', 'Japanese', 'Korean'],
-    updatedAt: '2024-02-20T15:45:00Z',
-    progress: 80,
-  },
-  {
-    id: '4',
-    name: 'Product Documentation',
-    description: 'Technical documentation for product manuals',
-    status: 'completed',
-    languages: ['Spanish', 'French', 'German'],
-    updatedAt: '2024-01-15T09:20:00Z',
-    progress: 100,
-  },
-  {
-    id: '5',
-    name: 'Legal Documents',
-    description: 'Translation of legal documents and agreements',
-    status: 'archived',
-    languages: ['French', 'Spanish'],
-    updatedAt: '2023-12-10T14:30:00Z',
-    progress: 100,
-  },
-];
-
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed' | 'archived'>('all');
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const { user } = useAuth();
 
   useEffect(() => {
-    // Simulate loading data from API
-    const timeout = setTimeout(() => {
-      setProjects(MOCK_PROJECTS);
-      setIsLoading(false);
-    }, 1000);
+    const fetchProjects = async () => {
+      if (!user) {
+        setIsLoading(false);
+        return;
+      }
 
-    return () => clearTimeout(timeout);
-  }, []);
+      try {
+        const firestoreProjects = await getUserProjects(user.uid);
+        
+        // Convert Firestore projects to UI projects
+        const formattedProjects = firestoreProjects.map((project: FirestoreProject) => {
+          // Calculate status based on phases
+          let status: 'active' | 'completed' | 'archived' = 'active';
+          const phases = Object.values(project.phases || {});
+          
+          // If all phases are completed, mark as completed
+          if (phases.length > 0 && phases.every(status => status === PhaseStatus.COMPLETED)) {
+            status = 'completed';
+          }
+          
+          // Calculate progress percentage based on completed phases
+          const totalPhases = phases.length || 1;
+          const completedPhases = phases.filter(status => status === PhaseStatus.COMPLETED).length;
+          const inProgressPhases = phases.filter(status => status === PhaseStatus.IN_PROGRESS).length;
+          
+          // Each completed phase is worth 100%, in-progress phases worth 50%
+          const progress = Math.round(((completedPhases * 100) + (inProgressPhases * 50)) / totalPhases);
+          
+          return {
+            id: project.id || '',
+            name: project.name,
+            description: project.description,
+            status,
+            languages: project.targetLanguages,
+            updatedAt: project.updatedAt instanceof Date ? project.updatedAt.toISOString() : new Date().toISOString(),
+            progress: progress
+          };
+        });
+        
+        setProjects(formattedProjects);
+      } catch (err) {
+        console.error('Error fetching projects:', err);
+        setError('Failed to load projects. Please try again later.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProjects();
+  }, [user]);
 
   const filteredProjects = projects.filter(project => {
     if (filter === 'all') return true;
@@ -167,6 +166,34 @@ export default function ProjectsPage() {
           {isLoading ? (
             <div className="flex justify-center py-12">
               <LoadingSpinner size="lg" />
+            </div>
+          ) : error ? (
+            <div className="px-4 py-12 text-center">
+              <svg className="mx-auto h-12 w-12 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">Error Loading Projects</h3>
+              <p className="mt-1 text-sm text-gray-500">{error}</p>
+              <div className="mt-6">
+                <Button onClick={() => window.location.reload()}>
+                  Retry
+                </Button>
+              </div>
+            </div>
+          ) : !user ? (
+            <div className="px-4 py-12 text-center">
+              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">Please log in</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                You need to be logged in to view your projects
+              </p>
+              <div className="mt-6">
+                <Button onClick={() => router.push('/login')}>
+                  Log In
+                </Button>
+              </div>
             </div>
           ) : filteredProjects.length === 0 ? (
             <div className="px-4 py-12 text-center">
