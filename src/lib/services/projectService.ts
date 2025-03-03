@@ -16,11 +16,21 @@ import {
   FirestoreError
 } from 'firebase/firestore';
 import { firestore } from '../firebase';
-import { Project, ProjectFormData, ProjectPhase, PhaseStatus, ErrorResponse, ProjectPhases } from '../types';
+import { 
+  Project, 
+  ProjectFormData, 
+  ProjectPhase, 
+  PhaseStatus, 
+  ErrorResponse, 
+  ProjectPhases,
+  Video,
+  VideoFormData
+} from '../types';
 import { FieldValue } from 'firebase/firestore';
 import { PHASE_SEQUENCE } from '../constants';
 
 const PROJECTS_COLLECTION = 'projects';
+const VIDEOS_COLLECTION = 'videos';
 
 /**
  * Converts Firestore document to Project object with proper typing
@@ -37,6 +47,23 @@ const convertToProject = (doc: DocumentSnapshot | QueryDocumentSnapshot): Projec
     createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate() : data.createdAt,
     updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt.toDate() : data.updatedAt,
   } as Project;
+};
+
+/**
+ * Converts Firestore document to Video object with proper typing
+ */
+const convertToVideo = (doc: DocumentSnapshot | QueryDocumentSnapshot): Video => {
+  const data = doc.data();
+  if (!data) {
+    throw new Error('Document data is empty');
+  }
+  
+  return {
+    id: doc.id,
+    ...data,
+    createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate() : data.createdAt,
+    updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt.toDate() : data.updatedAt,
+  } as Video;
 };
 
 /**
@@ -73,6 +100,10 @@ const createDefaultPhases = (): ProjectPhases => {
     return phases;
   }, {} as ProjectPhases);
 };
+
+// -------------------------------
+// Project CRUD Operations
+// -------------------------------
 
 /**
  * Creates a new project
@@ -244,11 +275,170 @@ export const deleteProject = async (projectId: string): Promise<void> => {
     if (!docSnap.exists()) {
       throw new Error(`Project with ID ${projectId} not found`);
     }
+
+    // Get all videos for this project and delete them first
+    const videos = await getProjectVideos(projectId);
+    const deletePromises = videos.map(video => deleteVideo(projectId, video.id));
+    await Promise.all(deletePromises);
     
+    // Then delete the project
     await deleteDoc(docRef);
   } catch (error) {
     console.error('Error deleting project:', error);
     const errorResponse = createErrorResponse(error, `Failed to delete project with ID ${projectId}`);
+    throw errorResponse;
+  }
+};
+
+// -------------------------------
+// Video CRUD Operations
+// -------------------------------
+
+/**
+ * Creates a new video for a project
+ */
+export const createVideo = async (projectId: string, videoData: VideoFormData, userId: string): Promise<Video> => {
+  try {
+    // First check if the project exists
+    await getProject(projectId);
+    
+    // Initialize the video with default values
+    const newVideo: Omit<Video, 'id'> = {
+      ...videoData,
+      projectId,
+      createdBy: userId,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      status: 'pending'
+    };
+    
+    // Create the subcollection path
+    const videosCollectionRef = collection(firestore, PROJECTS_COLLECTION, projectId, VIDEOS_COLLECTION);
+    const docRef = await addDoc(videosCollectionRef, newVideo);
+    
+    // Return the created video with an ID
+    return {
+      ...newVideo,
+      id: docRef.id,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+  } catch (error) {
+    console.error('Error creating video:', error);
+    const errorResponse = createErrorResponse(error, 'Failed to create video');
+    throw errorResponse;
+  }
+};
+
+/**
+ * Gets a video by ID
+ */
+export const getVideo = async (projectId: string, videoId: string): Promise<Video> => {
+  try {
+    const docRef = doc(firestore, PROJECTS_COLLECTION, projectId, VIDEOS_COLLECTION, videoId);
+    const docSnap = await getDoc(docRef);
+    
+    if (!docSnap.exists()) {
+      throw new Error(`Video with ID ${videoId} not found in project ${projectId}`);
+    }
+    
+    return convertToVideo(docSnap);
+  } catch (error) {
+    console.error('Error fetching video:', error);
+    const errorResponse = createErrorResponse(error, `Failed to fetch video with ID ${videoId}`);
+    throw errorResponse;
+  }
+};
+
+/**
+ * Gets all videos for a project
+ */
+export const getProjectVideos = async (projectId: string): Promise<Video[]> => {
+  try {
+    // First check if the project exists
+    await getProject(projectId);
+    
+    const videosCollectionRef = collection(firestore, PROJECTS_COLLECTION, projectId, VIDEOS_COLLECTION);
+    const q = query(videosCollectionRef, orderBy('updatedAt', 'desc'));
+    
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(convertToVideo);
+  } catch (error) {
+    console.error('Error fetching project videos:', error);
+    const errorResponse = createErrorResponse(error, `Failed to fetch videos for project with ID ${projectId}`);
+    throw errorResponse;
+  }
+};
+
+/**
+ * Updates an existing video
+ */
+export const updateVideo = async (projectId: string, videoId: string, updateData: Partial<Video>): Promise<Video> => {
+  try {
+    const docRef = doc(firestore, PROJECTS_COLLECTION, projectId, VIDEOS_COLLECTION, videoId);
+    
+    // First check if the video exists
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) {
+      throw new Error(`Video with ID ${videoId} not found in project ${projectId}`);
+    }
+    
+    // Remove id and projectId from update data
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { id: _, projectId: __, ...dataToUpdate } = updateData;
+    
+    // Add updatedAt timestamp
+    const finalUpdateData = {
+      ...dataToUpdate,
+      updatedAt: serverTimestamp()
+    };
+    
+    await updateDoc(docRef, finalUpdateData);
+    
+    // Return the updated video
+    const currentVideo = convertToVideo(docSnap);
+    return {
+      ...currentVideo,
+      ...dataToUpdate,
+      updatedAt: new Date()
+    };
+  } catch (error) {
+    console.error('Error updating video:', error);
+    const errorResponse = createErrorResponse(error, `Failed to update video with ID ${videoId}`);
+    throw errorResponse;
+  }
+};
+
+/**
+ * Updates the status of a video
+ */
+export const updateVideoStatus = async (projectId: string, videoId: string, status: string): Promise<Video> => {
+  try {
+    return await updateVideo(projectId, videoId, { status });
+  } catch (error) {
+    console.error('Error updating video status:', error);
+    const errorResponse = createErrorResponse(error, `Failed to update status for video with ID ${videoId}`);
+    throw errorResponse;
+  }
+};
+
+/**
+ * Deletes a video
+ */
+export const deleteVideo = async (projectId: string, videoId: string): Promise<void> => {
+  try {
+    const docRef = doc(firestore, PROJECTS_COLLECTION, projectId, VIDEOS_COLLECTION, videoId);
+    
+    // First check if the video exists
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) {
+      throw new Error(`Video with ID ${videoId} not found in project ${projectId}`);
+    }
+    
+    await deleteDoc(docRef);
+  } catch (error) {
+    console.error('Error deleting video:', error);
+    const errorResponse = createErrorResponse(error, `Failed to delete video with ID ${videoId}`);
     throw errorResponse;
   }
 };

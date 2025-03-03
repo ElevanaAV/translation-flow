@@ -23,6 +23,11 @@ export enum PhaseStatus {
 }
 
 /**
+ * Video status types
+ */
+export type VideoStatus = 'pending' | 'in_progress' | 'completed';
+
+/**
  * Record of all phases and their statuses
  */
 export type ProjectPhases = Record<ProjectPhase, PhaseStatus>;
@@ -64,6 +69,56 @@ export interface ProjectFormData {
   description: string;
   sourceLanguage: string;
   targetLanguages: string[];
+}
+
+/**
+ * Video base interface
+ */
+export interface VideoBase {
+  projectId: string;
+  title: string;
+  description?: string;
+  sourceFileName: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  sourceFileContent?: string;
+  translatedFileName?: string;
+  translatedFileContent?: string;
+  originalTranslatedContent?: string;
+  videoUrl?: string;
+  audioUrl?: string;
+  status: VideoStatus;
+  createdAt: Date | number | FieldValue;
+  updatedAt: Date | number | FieldValue;
+  createdBy: string;
+}
+
+/**
+ * Video interface with optional ID
+ */
+export interface Video extends VideoBase {
+  id?: string;
+}
+
+/**
+ * Video interface with required ID (for stored videos)
+ */
+export interface StoredVideo extends VideoBase {
+  id: string;
+}
+
+/**
+ * Form data for video creation/update
+ */
+export interface VideoFormData {
+  title: string;
+  description?: string;
+  sourceFileName: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  sourceFileContent?: string;
+  translatedFileName?: string;
+  translatedFileContent?: string;
 }
 
 /**
